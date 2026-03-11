@@ -38,6 +38,16 @@ fs.ensureDirSync(BACKUPS_DIR);
 fs.ensureDirSync(WORLDS_DIR);
 fs.ensureDirSync(UPLOADS_DIR);
 
+/** Fix ownership of a path so the MC container (uid=1000) can access it */
+function fixOwnership(targetPath) {
+  return new Promise((resolve) => {
+    exec(`chown -R 1000:1000 "${targetPath}"`, (err) => {
+      if (err) console.error("chown failed:", err.message);
+      resolve();
+    });
+  });
+}
+
 const upload = multer({ dest: UPLOADS_DIR });
 
 // --- RCON ---
@@ -391,8 +401,8 @@ app.get("/api/change-world/:worldName", async (req, res) => {
       // Remove active world and copy new one
       fs.rmSync(ACTIVE_WORLD, { recursive: true, force: true });
       fs.copySync(newWorldPath, ACTIVE_WORLD);
-      // Remove session.lock to prevent AccessDeniedException on startup
       fs.rmSync(`${ACTIVE_WORLD}/session.lock`, { force: true });
+      await fixOwnership(ACTIVE_WORLD);
       fs.writeFileSync(CURRENT_WORLD_TXT, newWorldName);
 
       // Start server
@@ -489,8 +499,8 @@ app.get("/api/restore-backup/:backupName", async (req, res) => {
     try {
       fs.rmSync(ACTIVE_WORLD, { recursive: true, force: true });
       fs.copySync(backupPath, ACTIVE_WORLD);
-      // Remove session.lock to prevent AccessDeniedException on startup
       fs.rmSync(`${ACTIVE_WORLD}/session.lock`, { force: true });
+      await fixOwnership(ACTIVE_WORLD);
       // Extract world name from backup name (everything before the timestamp)
       const worldName = backupName.replace(/-\d{4}-\d{2}-\d{2}T.*$/, "");
       if (worldName) {
