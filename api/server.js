@@ -139,9 +139,15 @@ app.get("/api/status", async (req, res) => {
     const players = match
       ? match[2].split(",").map((p) => p.trim()).filter(Boolean)
       : [];
-    res.json({ status: "started", online: count, players });
+    const currentWorld = fs.existsSync(CURRENT_WORLD_TXT)
+      ? fs.readFileSync(CURRENT_WORLD_TXT, "utf8").trim()
+      : null;
+    res.json({ status: "started", online: count, players, currentWorld });
   } catch {
-    res.json({ status: "stopped", online: 0, players: [] });
+    const currentWorld = fs.existsSync(CURRENT_WORLD_TXT)
+      ? fs.readFileSync(CURRENT_WORLD_TXT, "utf8").trim()
+      : null;
+    res.json({ status: "stopped", online: 0, players: [], currentWorld });
   }
 });
 

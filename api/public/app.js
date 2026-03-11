@@ -39,6 +39,11 @@ async function refreshStatus() {
     list.innerHTML = status.players
       .map((p) => `<span class="player-tag">${p}</span>`)
       .join("");
+
+    // Update current world from status (no extra request needed)
+    if (status.currentWorld) {
+      document.getElementById("current-world").textContent = status.currentWorld;
+    }
   }
 
   if (rcon) {
@@ -48,8 +53,33 @@ async function refreshStatus() {
   }
 }
 
-setInterval(refreshStatus, 10000);
+// Slow-poll worlds and backups (every 30s)
+let pollCount = 0;
+function poll() {
+  refreshStatus();
+  pollCount++;
+  if (pollCount % 3 === 0) {
+    loadWorlds();
+    listBackups();
+  }
+}
+
+let pollTimer = setInterval(poll, 10000);
 refreshStatus();
+
+// Pause polling when tab is hidden, resume when visible
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) {
+    clearInterval(pollTimer);
+    pollTimer = null;
+  } else {
+    refreshStatus();
+    loadWorlds();
+    listBackups();
+    pollTimer = setInterval(poll, 10000);
+    pollCount = 0;
+  }
+});
 
 // --- Server actions ---
 async function serverAction(action) {
