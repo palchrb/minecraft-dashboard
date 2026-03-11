@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="no">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Minecraft Dashboard</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>Minecraft Dashboard</h1>
+      <div id="status-badge" class="badge badge-offline">Offline</div>
+    </header>
+
+    <!-- Server Status -->
+    <section class="card">
+      <h2>Server Status</h2>
+      <div class="status-grid">
+        <div class="stat">
+          <span class="stat-label">Status</span>
+          <span id="server-status" class="stat-value">--</span>
+        </div>
+        <div class="stat">
+          <span class="stat-label">Players Online</span>
+          <span id="player-count" class="stat-value">0</span>
+        </div>
+        <div class="stat">
+          <span class="stat-label">RCON</span>
+          <span id="rcon-status" class="stat-value">--</span>
+        </div>
+      </div>
+      <div id="player-list" class="player-list"></div>
+    </section>
+
+    <!-- Server Controls -->
+    <section class="card">
+      <h2>Server Controls</h2>
+      <div class="btn-group">
+        <button onclick="serverAction('start')" class="btn btn-green">Start Server</button>
+        <button onclick="serverAction('stop')" class="btn btn-red">Stop Server</button>
+        <button onclick="serverAction('backup')" class="btn btn-blue">Backup World</button>
+      </div>
+    </section>
+
+    <!-- Gamemode -->
+    <section class="card">
+      <h2>Gamemode (all players)</h2>
+      <div class="btn-group">
+        <button onclick="setGamemode('survival')" class="btn">Survival</button>
+        <button onclick="setGamemode('creative')" class="btn">Creative</button>
+        <button onclick="setGamemode('adventure')" class="btn">Adventure</button>
+        <button onclick="setGamemode('spectator')" class="btn">Spectator</button>
+      </div>
+    </section>
+
+    <!-- RCON Command -->
+    <section class="card">
+      <h2>RCON Command</h2>
+      <div class="input-group">
+        <input type="text" id="rcon-cmd" placeholder="e.g. time set day" onkeydown="if(event.key==='Enter')sendCommand()">
+        <button onclick="sendCommand()" class="btn btn-blue">Send</button>
+      </div>
+      <pre id="cmd-output" class="output"></pre>
+    </section>
+
+    <!-- Whitelist -->
+    <section class="card">
+      <h2>Whitelist</h2>
+      <div class="input-group">
+        <input type="text" id="whitelist-player" placeholder="Player name">
+        <button onclick="whitelistAction('add')" class="btn btn-green">Add</button>
+        <button onclick="whitelistAction('remove')" class="btn btn-red">Remove</button>
+      </div>
+      <button onclick="showWhitelist()" class="btn btn-sm">Show Whitelist</button>
+      <pre id="whitelist-output" class="output"></pre>
+    </section>
+
+    <!-- OP Management -->
+    <section class="card">
+      <h2>OP Management</h2>
+      <div class="input-group">
+        <input type="text" id="op-player" placeholder="Player name">
+        <button onclick="opAction('op')" class="btn btn-green">OP</button>
+        <button onclick="opAction('deop')" class="btn btn-red">De-OP</button>
+      </div>
+    </section>
+
+    <!-- Backups -->
+    <section class="card">
+      <h2>Backups</h2>
+      <button onclick="listBackups()" class="btn btn-sm">Refresh</button>
+      <ul id="backup-list" class="backup-list"></ul>
+    </section>
+
+    <!-- Server Log -->
+    <section class="card">
+      <h2>Server Log</h2>
+      <button onclick="loadLogs()" class="btn btn-sm">Refresh</button>
+      <pre id="log-output" class="output log-output"></pre>
+    </section>
+
+    <!-- Notification area -->
+    <div id="toast" class="toast"></div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
