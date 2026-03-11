@@ -1,7 +1,7 @@
 FROM node:20-alpine
 
 # Install docker CLI for start/stop of MC container
-RUN apk add --no-cache docker-cli
+RUN apk add --no-cache docker-cli unzip
 
 WORKDIR /app
 

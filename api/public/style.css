@@ -194,15 +194,41 @@ h2 {
   max-height: 400px;
 }
 
-.backup-list {
+h3 {
+  font-size: 0.95rem;
+  margin: 16px 0 8px;
+  color: #888;
+}
+
+.world-current {
+  margin-bottom: 12px;
+  font-size: 0.9rem;
+}
+
+.world-list, .backup-list {
   list-style: none;
   margin-top: 8px;
 }
 
-.backup-list li {
-  padding: 6px 0;
+.world-item, .backup-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 0;
   border-bottom: 1px solid #0f3460;
   font-size: 0.85rem;
+}
+
+.world-active {
+  color: #4ecca3;
+  font-weight: 600;
+}
+
+.file-input {
+  flex: 1;
+  padding: 8px;
+  font-size: 0.85rem;
+  color: #e0e0e0;
 }
 
 .toast {

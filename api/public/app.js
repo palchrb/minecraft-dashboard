@@ -113,15 +113,99 @@ async function opAction(action) {
   if (data) toast(data.response || data.error || "OK");
 }
 
+// --- Worlds ---
+async function loadWorlds() {
+  const data = await api("/api/list-worlds");
+  if (!data) return;
+
+  document.getElementById("current-world").textContent = data.currentWorld || "unknown";
+
+  const list = document.getElementById("world-list");
+  if (data.worlds && data.worlds.length) {
+    list.innerHTML = data.worlds
+      .map(
+        (w) =>
+          `<li class="world-item ${w === data.currentWorld ? "world-active" : ""}">
+            <span>${w}${w === data.currentWorld ? " (active)" : ""}</span>
+            ${
+              w !== data.currentWorld
+                ? `<button onclick="switchWorld('${w}')" class="btn btn-sm btn-green">Load</button>`
+                : ""
+            }
+          </li>`
+      )
+      .join("");
+  } else {
+    list.innerHTML = "<li>No saved worlds</li>";
+  }
+}
+
+async function saveCurrentWorld() {
+  const data = await api("/api/save-current");
+  if (data) {
+    toast(data.message || data.error || "OK");
+    loadWorlds();
+  }
+}
+
+async function switchWorld(name) {
+  if (!confirm(`Switch to world "${name}"? Server will restart.`)) return;
+  const data = await api(`/api/change-world/${encodeURIComponent(name)}`);
+  if (data) toast(data.message || data.error || "OK");
+}
+
+async function createNewWorld() {
+  const input = document.getElementById("new-world-name");
+  const name = input.value.trim();
+  if (!name) return toast("Enter a world name", "error");
+  if (!confirm(`Generate new world "${name}"? Server will restart.`)) return;
+
+  const data = await api(`/api/new-world/${encodeURIComponent(name)}`);
+  if (data) toast(data.message || data.error || "OK");
+  input.value = "";
+}
+
+async function uploadWorld() {
+  const fileInput = document.getElementById("world-file");
+  if (!fileInput.files.length) return toast("Select a .zip file first", "error");
+
+  const formData = new FormData();
+  formData.append("worldFile", fileInput.files[0]);
+
+  toast("Uploading world...");
+  const data = await api("/api/upload-world", { method: "POST", body: formData });
+  if (data) {
+    toast(data.message || data.error || "OK", data.success ? "success" : "error");
+    fileInput.value = "";
+    loadWorlds();
+  }
+}
+
+loadWorlds();
+
 // --- Backups ---
 async function listBackups() {
   const data = await api("/api/list-backups");
   const list = document.getElementById("backup-list");
   if (data && data.backups) {
     list.innerHTML = data.backups.length
-      ? data.backups.map((b) => `<li>${b}</li>`).join("")
+      ? data.backups
+          .map(
+            (b) =>
+              `<li class="backup-item">
+                <span>${b}</span>
+                <button onclick="restoreBackup('${b}')" class="btn btn-sm btn-blue">Restore</button>
+              </li>`
+          )
+          .join("")
       : "<li>No backups found</li>";
   }
+}
+
+async function restoreBackup(name) {
+  if (!confirm(`Restore backup "${name}"? Server will restart.`)) return;
+  const data = await api(`/api/restore-backup/${encodeURIComponent(name)}`);
+  if (data) toast(data.message || data.error || "OK");
 }
 
 listBackups();

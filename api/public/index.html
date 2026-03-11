@@ -3,6 +3,10 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="theme-color" content="#1a1a2e">
+  <link rel="manifest" href="manifest.json">
   <title>Minecraft Dashboard</title>
   <link rel="stylesheet" href="style.css">
 </head>
@@ -83,6 +87,31 @@
         <input type="text" id="op-player" placeholder="Player name">
         <button onclick="opAction('op')" class="btn btn-green">OP</button>
         <button onclick="opAction('deop')" class="btn btn-red">De-OP</button>
+      </div>
+    </section>
+
+    <!-- World Management -->
+    <section class="card">
+      <h2>Worlds</h2>
+      <div class="world-current">
+        Active world: <strong id="current-world">--</strong>
+      </div>
+      <div class="btn-group" style="margin-bottom:12px">
+        <button onclick="loadWorlds()" class="btn btn-sm">Refresh</button>
+        <button onclick="saveCurrentWorld()" class="btn btn-sm btn-blue">Save Current</button>
+      </div>
+      <ul id="world-list" class="world-list"></ul>
+
+      <h3>New World</h3>
+      <div class="input-group">
+        <input type="text" id="new-world-name" placeholder="World name">
+        <button onclick="createNewWorld()" class="btn btn-green">Generate</button>
+      </div>
+
+      <h3>Upload World (.zip)</h3>
+      <div class="input-group">
+        <input type="file" id="world-file" accept=".zip" class="file-input">
+        <button onclick="uploadWorld()" class="btn btn-blue">Upload</button>
       </div>
     </section>
 
