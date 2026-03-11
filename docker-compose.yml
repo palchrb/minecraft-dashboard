@@ -1,0 +1,41 @@
+version: "3.8"
+
+services:
+  mc:
+    image: itzg/minecraft-server
+    container_name: minecraft-mc-1
+    environment:
+      EULA: "TRUE"
+      TYPE: "VANILLA"
+      VERSION: "LATEST"
+      MEMORY: "2G"
+      RCON_PASSWORD: "changeme"
+      ENABLE_RCON: "true"
+    ports:
+      - "25565:25565"
+    volumes:
+      - mc-data:/data
+    restart: unless-stopped
+
+  dashboard:
+    image: ghcr.io/palchrb/minecraft-dashboard:latest
+    # Or build locally:
+    # build: ./api
+    container_name: mc-dashboard
+    environment:
+      RCON_HOST: mc
+      RCON_PORT: 25575
+      RCON_PASSWORD: changeme
+      MC_CONTAINER: minecraft-mc-1
+      MC_LOG_FILE: /mcdata/logs/latest.log
+    ports:
+      - "3000:3000"
+    volumes:
+      - mc-data:/mcdata
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      - mc
+    restart: unless-stopped
+
+volumes:
+  mc-data:
