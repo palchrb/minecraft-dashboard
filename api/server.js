@@ -48,6 +48,11 @@ function fixOwnership(targetPath) {
   });
 }
 
+// Fix ownership of active world on API startup (in case previous copy left root-owned files)
+if (fs.existsSync(ACTIVE_WORLD)) {
+  fixOwnership(ACTIVE_WORLD).then(() => console.log("Startup: fixed world ownership"));
+}
+
 const upload = multer({ dest: UPLOADS_DIR });
 
 // --- RCON ---
