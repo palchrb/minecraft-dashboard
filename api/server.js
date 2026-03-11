@@ -391,6 +391,8 @@ app.get("/api/change-world/:worldName", async (req, res) => {
       // Remove active world and copy new one
       fs.rmSync(ACTIVE_WORLD, { recursive: true, force: true });
       fs.copySync(newWorldPath, ACTIVE_WORLD);
+      // Remove session.lock to prevent AccessDeniedException on startup
+      fs.rmSync(`${ACTIVE_WORLD}/session.lock`, { force: true });
       fs.writeFileSync(CURRENT_WORLD_TXT, newWorldName);
 
       // Start server
@@ -487,6 +489,8 @@ app.get("/api/restore-backup/:backupName", async (req, res) => {
     try {
       fs.rmSync(ACTIVE_WORLD, { recursive: true, force: true });
       fs.copySync(backupPath, ACTIVE_WORLD);
+      // Remove session.lock to prevent AccessDeniedException on startup
+      fs.rmSync(`${ACTIVE_WORLD}/session.lock`, { force: true });
       // Extract world name from backup name (everything before the timestamp)
       const worldName = backupName.replace(/-\d{4}-\d{2}-\d{2}T.*$/, "");
       if (worldName) {
