@@ -1,41 +1,65 @@
-version: "3.8"
-
 services:
   mc:
-    image: itzg/minecraft-server
-    container_name: minecraft-mc-1
-    environment:
-      EULA: "TRUE"
-      TYPE: "VANILLA"
-      VERSION: "LATEST"
-      MEMORY: "2G"
-      RCON_PASSWORD: "changeme"
-      ENABLE_RCON: "true"
+    image: itzg/minecraft-server:latest
+    tty: true
+    stdin_open: true
+    restart: unless-stopped
     ports:
       - "25565:25565"
+      - "19132:19132/udp"
+    environment:
+      EULA: "TRUE"
+      TYPE: "PAPER"
+      MEMORY: "4096M"
+      MAX_PLAYERS: "40"
+      TZ: "Europe/Oslo"
+      ENFORCE_SECURE_PROFILE: "FALSE"
+      # RCON for dashboard API
+      ENABLE_RCON: "true"
+      RCON_PORT: "25575"
+      RCON_PASSWORD: "${RCON_PASSWORD:-changeme}"
+      # Whitelist / ops – replace with your own usernames
+      # WHITELIST: |
+      #   your_username
+      # ENFORCE_WHITELIST: "true"
+      # EXISTING_WHITELIST_FILE: "SYNCHRONIZE"
+      # OPS: |
+      #   your_username
+      # Plugins (uncomment/adjust as needed)
+      # MODRINTH_PROJECTS: |
+      #   viaversion
+      #   viabackwards
+      #   viarewind
+      # PLUGINS: |
+      #   https://download.geysermc.org/v2/projects/geyser/versions/latest/builds/latest/downloads/spigot
+      #   https://download.geysermc.org/v2/projects/floodgate/versions/latest/builds/latest/downloads/spigot
     volumes:
-      - mc-data:/data
-    restart: unless-stopped
+      - ./data:/data
+    networks:
+      - mcnet
 
   dashboard:
     image: ghcr.io/palchrb/minecraft-dashboard:latest
     # Or build locally:
     # build: ./api
-    container_name: mc-dashboard
-    environment:
-      RCON_HOST: mc
-      RCON_PORT: 25575
-      RCON_PASSWORD: changeme
-      MC_CONTAINER: minecraft-mc-1
-      MC_LOG_FILE: /mcdata/logs/latest.log
+    restart: unless-stopped
     ports:
       - "3000:3000"
+    environment:
+      RCON_HOST: mc
+      RCON_PORT: "25575"
+      RCON_PASSWORD: "${RCON_PASSWORD:-changeme}"
+      OPENAI_API_KEY: "${OPENAI_API_KEY}"
+      MC_LOG_FILE: /mcdata/logs/latest.log
+      TZ: "Europe/Oslo"
     volumes:
-      - mc-data:/mcdata
+      - ./data:/mcdata
       - /var/run/docker.sock:/var/run/docker.sock
     depends_on:
       - mc
-    restart: unless-stopped
+    networks:
+      - mcnet
 
-volumes:
-  mc-data:
+networks:
+  mcnet:
+    driver: bridge
