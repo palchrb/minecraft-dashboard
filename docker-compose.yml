@@ -49,7 +49,6 @@ services:
       RCON_HOST: mc
       RCON_PORT: "25575"
       RCON_PASSWORD: "${RCON_PASSWORD:-changeme}"
-      OPENAI_API_KEY: "${OPENAI_API_KEY}"
       MC_LOG_FILE: /mcdata/logs/latest.log
       TZ: "Europe/Oslo"
     volumes:
