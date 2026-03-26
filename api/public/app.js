@@ -269,16 +269,20 @@ function escapeHtml(str) {
 }
 
 async function allowMyIp() {
-  const detect = await api("/api/firewall/my-ip");
-  if (!detect) return;
-  if (!detect.valid) {
-    return toast(`Detected IP ${detect.ip} is not a valid public IP`, "error");
+  let ip;
+  try {
+    const res = await fetch("https://api.ipify.org?format=json");
+    const data = await res.json();
+    ip = data.ip;
+  } catch {
+    return toast("Could not detect your public IP", "error");
   }
-  if (!confirm(`Allow your IP ${detect.ip}?`)) return;
+  if (!ip) return toast("Could not detect your public IP", "error");
+  if (!confirm(`Allow your public IP ${ip}?`)) return;
   const data = await api("/api/firewall/add", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ ip: detect.ip, label: "My IP" }),
+    body: JSON.stringify({ ip, label: "My IP" }),
   });
   if (data) {
     toast(data.message || data.error || "OK", data.success ? "success" : "error");
