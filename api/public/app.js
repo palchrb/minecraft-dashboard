@@ -268,16 +268,30 @@ function escapeHtml(str) {
   return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
 }
 
-async function allowMyIp() {
-  let ip;
-  try {
-    const res = await fetch("https://api.ipify.org?format=json");
-    const data = await res.json();
-    ip = data.ip;
-  } catch {
-    return toast("Could not detect your public IP", "error");
+async function detectPublicIp() {
+  const services = [
+    { url: "https://api.ipify.org?format=json", parse: (d) => d.ip },
+    { url: "https://api64.ipify.org?format=json", parse: (d) => d.ip },
+    { url: "https://jsonip.com", parse: (d) => d.ip },
+  ];
+  for (const svc of services) {
+    try {
+      const res = await fetch(svc.url, { signal: AbortSignal.timeout(5000) });
+      const data = await res.json();
+      const ip = svc.parse(data);
+      if (ip) return ip;
+    } catch { /* try next */ }
   }
-  if (!ip) return toast("Could not detect your public IP", "error");
+  // Last resort: server-side detection (may return Tailscale IP)
+  const fallback = await api("/api/firewall/my-ip");
+  if (fallback && fallback.valid) return fallback.ip;
+  return null;
+}
+
+async function allowMyIp() {
+  toast("Detecting your public IP...");
+  const ip = await detectPublicIp();
+  if (!ip) return toast("Could not detect your public IP. Use manual input instead.", "error");
   if (!confirm(`Allow your public IP ${ip}?`)) return;
   const data = await api("/api/firewall/add", {
     method: "POST",
