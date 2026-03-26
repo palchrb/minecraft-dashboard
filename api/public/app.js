@@ -282,9 +282,6 @@ async function detectPublicIp() {
       if (ip) return ip;
     } catch { /* try next */ }
   }
-  // Last resort: server-side detection (may return Tailscale IP)
-  const fallback = await api("/api/firewall/my-ip");
-  if (fallback && fallback.valid) return fallback.ip;
   return null;
 }
 
