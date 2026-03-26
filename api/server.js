@@ -10,6 +10,7 @@ const fs = require("fs-extra");
 const { exec, execFile } = require("child_process");
 const cors = require("cors");
 const multer = require("multer");
+const rateLimit = require("express-rate-limit");
 const path = require("path");
 
 const app = express();
@@ -577,6 +578,14 @@ app.post("/api/upload-world", upload.single("worldFile"), (req, res) => {
 // FIREWALL (UFW) MANAGEMENT
 // ============================================================
 
+const firewallLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, error: "Too many requests, try again later" },
+});
+
 /** Strict IPv4 validation - rejects private, loopback, multicast, reserved */
 function isValidPublicIPv4(ip) {
   if (typeof ip !== "string") return false;
@@ -647,7 +656,7 @@ app.get("/api/firewall/my-ip", (req, res) => {
 });
 
 /** POST /api/firewall/add  body: { ip, label? } */
-app.post("/api/firewall/add", async (req, res) => {
+app.post("/api/firewall/add", firewallLimiter, async (req, res) => {
   const { ip, label } = req.body;
   if (!ip || !isValidPublicIPv4(ip)) {
     return res.status(400).json({ success: false, error: "Invalid or non-public IPv4 address" });
@@ -671,7 +680,7 @@ app.post("/api/firewall/add", async (req, res) => {
 });
 
 /** POST /api/firewall/remove  body: { ip } */
-app.post("/api/firewall/remove", async (req, res) => {
+app.post("/api/firewall/remove", firewallLimiter, async (req, res) => {
   const { ip } = req.body;
   if (!ip || !isValidPublicIPv4(ip)) {
     return res.status(400).json({ success: false, error: "Invalid IPv4 address" });
