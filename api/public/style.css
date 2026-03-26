@@ -224,6 +224,37 @@ h3 {
   font-weight: 600;
 }
 
+.card-desc {
+  font-size: 0.8rem;
+  color: #888;
+  margin-bottom: 12px;
+}
+
+.firewall-list {
+  list-style: none;
+  margin-top: 8px;
+}
+
+.firewall-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 0;
+  border-bottom: 1px solid #0f3460;
+  font-size: 0.85rem;
+}
+
+.firewall-ip {
+  font-family: "Fira Code", "Cascadia Code", monospace;
+  font-weight: 600;
+}
+
+.firewall-meta {
+  color: #888;
+  font-size: 0.75rem;
+  margin-left: 8px;
+}
+
 .file-input {
   flex: 1;
   padding: 8px;

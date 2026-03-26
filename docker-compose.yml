@@ -59,6 +59,14 @@ services:
     networks:
       - mcnet
 
+  ufw-agent:
+    image: alpine:latest
+    container_name: ufw-agent
+    command: ["sleep", "infinity"]
+    pid: host
+    privileged: true
+    restart: unless-stopped
+
 networks:
   mcnet:
     driver: bridge
