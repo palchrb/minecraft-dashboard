@@ -7,9 +7,10 @@ require("dotenv").config();
 const express = require("express");
 const { Rcon } = require("rcon-client");
 const fs = require("fs-extra");
-const { exec } = require("child_process");
+const { exec, execFile } = require("child_process");
 const cors = require("cors");
 const multer = require("multer");
+const rateLimit = require("express-rate-limit");
 const path = require("path");
 
 const app = express();
@@ -33,6 +34,15 @@ const WORLDS_DIR = "/mcdata/worlds";
 const ACTIVE_WORLD = "/mcdata/world";
 const UPLOADS_DIR = "/mcdata/uploads";
 const CURRENT_WORLD_TXT = "/mcdata/current-world.txt";
+
+// --- Firewall (UFW) konfig ---
+const UFW_AGENT_CONTAINER = process.env.UFW_AGENT_CONTAINER || "ufw-agent";
+const FIREWALL_RULES_FILE = "/mcdata/firewall-rules.json";
+const UFW_PORTS = [
+  { port: "25565", proto: "tcp" }, // Java Edition
+  { port: "19132", proto: "udp" }, // Bedrock Edition
+  { port: "24454", proto: "udp" }, // Simple Voice Chat
+];
 
 fs.ensureDirSync(BACKUPS_DIR);
 fs.ensureDirSync(WORLDS_DIR);
@@ -562,6 +572,135 @@ app.post("/api/upload-world", upload.single("worldFile"), (req, res) => {
       res.json({ success: true, message: `World "${baseName}" uploaded and ready` });
     }
   );
+});
+
+// ============================================================
+// FIREWALL (UFW) MANAGEMENT
+// ============================================================
+
+const firewallLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, error: "Too many requests, try again later" },
+});
+
+/** Strict IPv4 validation - rejects private, loopback, multicast, reserved */
+function isValidPublicIPv4(ip) {
+  if (typeof ip !== "string") return false;
+  const match = ip.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  if (!match) return false;
+  const parts = [match[1], match[2], match[3], match[4]];
+  const octets = parts.map(Number);
+  if (octets.some((o) => o > 255)) return false;
+  // Reject leading zeros (prevents octal interpretation tricks)
+  if (parts.some((s) => s.length > 1 && s.startsWith("0"))) return false;
+  const [a, b] = octets;
+  if (a === 0) return false; // 0.0.0.0/8
+  if (a === 10) return false; // 10.0.0.0/8
+  if (a === 127) return false; // loopback
+  if (a === 169 && b === 254) return false; // link-local
+  if (a === 172 && b >= 16 && b <= 31) return false; // 172.16.0.0/12
+  if (a === 192 && b === 168) return false; // 192.168.0.0/16
+  if (a >= 224) return false; // multicast + reserved
+  return true;
+}
+
+/** Run a UFW command on the host via the ufw-agent sidecar + nsenter */
+function ufwExec(action, ip, port, proto) {
+  const nsenterBase = [
+    "exec", UFW_AGENT_CONTAINER,
+    "nsenter", "-t", "1", "-m", "-u", "-i", "-n", "-p", "--",
+  ];
+  const ufwArgs = action === "allow"
+    ? ["ufw", "route", "allow", "from", ip, "to", "any", "port", port, "proto", proto]
+    : ["ufw", "route", "delete", "allow", "from", ip, "to", "any", "port", port, "proto", proto];
+
+  return new Promise((resolve, reject) => {
+    execFile("docker", [...nsenterBase, ...ufwArgs], { timeout: 15000 }, (err, stdout, stderr) => {
+      if (err) return reject(new Error(stderr || err.message));
+      resolve(stdout.trim());
+    });
+  });
+}
+
+function loadFirewallRules() {
+  try {
+    if (fs.existsSync(FIREWALL_RULES_FILE)) {
+      return JSON.parse(fs.readFileSync(FIREWALL_RULES_FILE, "utf8"));
+    }
+  } catch (e) {
+    console.error("Failed to load firewall rules:", e.message);
+  }
+  return { rules: [] };
+}
+
+function saveFirewallRules(data) {
+  fs.writeFileSync(FIREWALL_RULES_FILE, JSON.stringify(data, null, 2));
+}
+
+/** GET /api/firewall - list allowed IPs */
+app.get("/api/firewall", (req, res) => {
+  const data = loadFirewallRules();
+  res.json({ success: true, rules: data.rules });
+});
+
+/** GET /api/firewall/my-ip - detect client IP */
+app.get("/api/firewall/my-ip", (req, res) => {
+  const raw = (req.headers["x-forwarded-for"] || req.socket.remoteAddress || "")
+    .split(",")[0]
+    .trim()
+    .replace(/^::ffff:/, "");
+  res.json({ success: true, ip: raw, valid: isValidPublicIPv4(raw) });
+});
+
+/** POST /api/firewall/add  body: { ip, label? } */
+app.post("/api/firewall/add", firewallLimiter, async (req, res) => {
+  const { ip, label } = req.body;
+  if (!ip || !isValidPublicIPv4(ip)) {
+    return res.status(400).json({ success: false, error: "Invalid or non-public IPv4 address" });
+  }
+
+  const data = loadFirewallRules();
+  if (data.rules.some((r) => r.ip === ip)) {
+    return res.status(409).json({ success: false, error: "IP already in allowlist" });
+  }
+
+  try {
+    for (const { port, proto } of UFW_PORTS) {
+      await ufwExec("allow", ip, port, proto);
+    }
+    data.rules.push({ ip, addedAt: new Date().toISOString(), label: label || "" });
+    saveFirewallRules(data);
+    res.json({ success: true, message: `Allowed ${ip} on all Minecraft ports` });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/** POST /api/firewall/remove  body: { ip } */
+app.post("/api/firewall/remove", firewallLimiter, async (req, res) => {
+  const { ip } = req.body;
+  if (!ip || !isValidPublicIPv4(ip)) {
+    return res.status(400).json({ success: false, error: "Invalid IPv4 address" });
+  }
+
+  const data = loadFirewallRules();
+  if (!data.rules.some((r) => r.ip === ip)) {
+    return res.status(404).json({ success: false, error: "IP not in allowlist" });
+  }
+
+  try {
+    for (const { port, proto } of UFW_PORTS) {
+      await ufwExec("delete", ip, port, proto);
+    }
+    data.rules = data.rules.filter((r) => r.ip !== ip);
+    saveFirewallRules(data);
+    res.json({ success: true, message: `Removed ${ip} from all Minecraft ports` });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
 });
 
 // ============================================================

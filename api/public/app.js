@@ -61,6 +61,7 @@ function poll() {
   if (pollCount % 3 === 0) {
     loadWorlds();
     listBackups();
+    loadFirewallRules();
   }
 }
 
@@ -76,6 +77,7 @@ document.addEventListener("visibilitychange", () => {
     refreshStatus();
     loadWorlds();
     listBackups();
+    loadFirewallRules();
     pollTimer = setInterval(poll, 10000);
     pollCount = 0;
   }
@@ -239,6 +241,88 @@ async function restoreBackup(name) {
 }
 
 listBackups();
+
+// --- Firewall ---
+async function loadFirewallRules() {
+  const data = await api("/api/firewall");
+  const list = document.getElementById("firewall-list");
+  if (data && data.rules) {
+    list.innerHTML = data.rules.length
+      ? data.rules
+          .map(
+            (r) =>
+              `<li class="firewall-item">
+                <span>
+                  <span class="firewall-ip">${escapeHtml(r.ip)}</span>
+                  <span class="firewall-meta">${escapeHtml(r.label || "")}</span>
+                </span>
+                <button onclick="removeFirewallIp('${escapeHtml(r.ip)}')" class="btn btn-sm btn-red">Remove</button>
+              </li>`
+          )
+          .join("")
+      : "<li>No IPs allowed</li>";
+  }
+}
+
+function escapeHtml(str) {
+  return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
+}
+
+async function allowMyIp() {
+  let ip;
+  try {
+    const res = await fetch("https://api.ipify.org?format=json");
+    const data = await res.json();
+    ip = data.ip;
+  } catch {
+    return toast("Could not detect your public IP", "error");
+  }
+  if (!ip) return toast("Could not detect your public IP", "error");
+  if (!confirm(`Allow your public IP ${ip}?`)) return;
+  const data = await api("/api/firewall/add", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ip, label: "My IP" }),
+  });
+  if (data) {
+    toast(data.message || data.error || "OK", data.success ? "success" : "error");
+    loadFirewallRules();
+  }
+}
+
+async function addFirewallIp() {
+  const ip = document.getElementById("firewall-ip").value.trim();
+  const label = document.getElementById("firewall-label").value.trim();
+  if (!ip) return toast("Enter an IP address", "error");
+  const data = await api("/api/firewall/add", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ip, label }),
+  });
+  if (data) {
+    toast(data.message || data.error || "OK", data.success ? "success" : "error");
+    if (data.success) {
+      document.getElementById("firewall-ip").value = "";
+      document.getElementById("firewall-label").value = "";
+      loadFirewallRules();
+    }
+  }
+}
+
+async function removeFirewallIp(ip) {
+  if (!confirm(`Remove ${ip} from firewall allowlist?`)) return;
+  const data = await api("/api/firewall/remove", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ip }),
+  });
+  if (data) {
+    toast(data.message || data.error || "OK", data.success ? "success" : "error");
+    loadFirewallRules();
+  }
+}
+
+loadFirewallRules();
 
 // --- Logs ---
 async function loadLogs() {
