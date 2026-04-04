@@ -343,7 +343,11 @@ loadFirewallRules();
 async function loadAttempts() {
   const data = await api("/api/firewall/attempts");
   const list = document.getElementById("attempts-list");
-  if (data && data.attempts) {
+  if (!data) {
+    list.innerHTML = "<li>Failed to load attempts</li>";
+  } else if (data.error) {
+    list.innerHTML = `<li>Error: ${escapeHtml(data.error)}</li>`;
+  } else if (data.attempts) {
     list.innerHTML = data.attempts.length
       ? data.attempts
           .map(

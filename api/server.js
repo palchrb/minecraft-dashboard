@@ -703,25 +703,45 @@ app.post("/api/firewall/remove", firewallLimiter, async (req, res) => {
   }
 });
 
+/** Try to read UFW log lines from host - checks multiple log locations */
+function readUfwLog() {
+  const logFiles = ["/var/log/ufw.log", "/var/log/syslog", "/var/log/kern.log"];
+  const nsenterBase = [
+    "exec", UFW_AGENT_CONTAINER,
+    "nsenter", "-t", "1", "-m", "-u", "-i", "-n", "-p", "--",
+  ];
+
+  return new Promise((resolve, reject) => {
+    let tried = 0;
+    function tryNext() {
+      if (tried >= logFiles.length) {
+        return reject(new Error(
+          `UFW log not found. Tried: ${logFiles.join(", ")}. ` +
+          "Ensure UFW logging is enabled: sudo ufw logging on"
+        ));
+      }
+      const logFile = logFiles[tried++];
+      execFile(
+        "docker",
+        [...nsenterBase, "tail", "-n", "2000", logFile],
+        { timeout: 10000, maxBuffer: 2 * 1024 * 1024 },
+        (err, stdout, stderr) => {
+          if (err) return tryNext();
+          // For syslog/kern.log, only keep UFW lines
+          const lines = stdout.split("\n").filter((l) => l.includes("[UFW"));
+          if (lines.length === 0 && tried < logFiles.length) return tryNext();
+          resolve(lines.join("\n"));
+        }
+      );
+    }
+    tryNext();
+  });
+}
+
 /** GET /api/firewall/attempts - blocked connection attempts on MC ports (last 5 min) */
 app.get("/api/firewall/attempts", async (req, res) => {
   try {
-    // Read UFW log from host via ufw-agent sidecar
-    const logContent = await new Promise((resolve, reject) => {
-      execFile(
-        "docker",
-        [
-          "exec", UFW_AGENT_CONTAINER,
-          "nsenter", "-t", "1", "-m", "-u", "-i", "-n", "-p", "--",
-          "tail", "-n", "2000", "/var/log/ufw.log",
-        ],
-        { timeout: 10000, maxBuffer: 2 * 1024 * 1024 },
-        (err, stdout, stderr) => {
-          if (err) return reject(new Error(stderr || err.message));
-          resolve(stdout);
-        }
-      );
-    });
+    const logContent = await readUfwLog();
 
     const now = Date.now();
     const fiveMinAgo = now - 5 * 60 * 1000;
@@ -735,8 +755,8 @@ app.get("/api/firewall/attempts", async (req, res) => {
       const dptMatch = line.match(/DPT=(\d+)/);
       if (!dptMatch || !mcPorts.has(dptMatch[1])) continue;
 
-      // Parse timestamp - UFW log format: "Apr  4 12:34:56"
-      const tsMatch = line.match(/^(\w{3}\s+\d+\s+\d{2}:\d{2}:\d{2})/);
+      // Parse timestamp - UFW log format: "Apr  4 12:34:56" (may appear after hostname in syslog)
+      const tsMatch = line.match(/(\w{3}\s+\d+\s+\d{2}:\d{2}:\d{2})/);
       if (tsMatch) {
         const logDate = new Date(`${tsMatch[1]} ${new Date().getFullYear()}`);
         if (logDate.getTime() < fiveMinAgo) continue;
@@ -753,19 +773,21 @@ app.get("/api/firewall/attempts", async (req, res) => {
       ipCounts[ip].ports.add(dptMatch[1]);
     }
 
-    // Look up country for each IP via ip-api.com (free, no key)
+    // Look up country for each IP via ip-api.com (free, no key needed)
     const attempts = [];
     const ips = Object.keys(ipCounts);
 
     if (ips.length > 0 && ips.length <= 100) {
-      // Batch lookup via ip-api.com (max 100 per batch, free tier)
       try {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 5000);
         const batchRes = await fetch("http://ip-api.com/batch", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(ips.map((ip) => ({ query: ip, fields: "query,country,countryCode" }))),
-          signal: AbortSignal.timeout(5000),
+          signal: controller.signal,
         });
+        clearTimeout(timer);
         const geoData = await batchRes.json();
         const geoMap = {};
         for (const g of geoData) {
@@ -782,7 +804,6 @@ app.get("/api/firewall/attempts", async (req, res) => {
           });
         }
       } catch {
-        // Fallback: no geo data
         for (const ip of ips) {
           attempts.push({
             ip,
@@ -795,7 +816,6 @@ app.get("/api/firewall/attempts", async (req, res) => {
       }
     }
 
-    // Sort by count descending
     attempts.sort((a, b) => b.count - a.count);
     res.json({ success: true, attempts });
   } catch (err) {
