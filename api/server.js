@@ -755,8 +755,8 @@ app.get("/api/firewall/attempts", async (req, res) => {
       const dptMatch = line.match(/DPT=(\d+)/);
       if (!dptMatch || !mcPorts.has(dptMatch[1])) continue;
 
-      // Parse timestamp - try ISO 8601 first, then syslog format
-      const isoMatch = line.match(/(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})/);
+      // Parse timestamp - try ISO 8601 (with tz offset) first, then syslog format
+      const isoMatch = line.match(/(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[\d.]*[+-]\d{2}:\d{2})/);
       const syslogMatch = !isoMatch && line.match(/(\w{3}\s+\d+\s+\d{2}:\d{2}:\d{2})/);
       if (isoMatch) {
         const logDate = new Date(isoMatch[1]);
