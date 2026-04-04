@@ -703,6 +703,106 @@ app.post("/api/firewall/remove", firewallLimiter, async (req, res) => {
   }
 });
 
+/** GET /api/firewall/attempts - blocked connection attempts on MC ports (last 5 min) */
+app.get("/api/firewall/attempts", async (req, res) => {
+  try {
+    // Read UFW log from host via ufw-agent sidecar
+    const logContent = await new Promise((resolve, reject) => {
+      execFile(
+        "docker",
+        [
+          "exec", UFW_AGENT_CONTAINER,
+          "nsenter", "-t", "1", "-m", "-u", "-i", "-n", "-p", "--",
+          "tail", "-n", "2000", "/var/log/ufw.log",
+        ],
+        { timeout: 10000, maxBuffer: 2 * 1024 * 1024 },
+        (err, stdout, stderr) => {
+          if (err) return reject(new Error(stderr || err.message));
+          resolve(stdout);
+        }
+      );
+    });
+
+    const now = Date.now();
+    const fiveMinAgo = now - 5 * 60 * 1000;
+    const mcPorts = new Set(UFW_PORTS.map((p) => p.port));
+    const ipCounts = {};
+
+    for (const line of logContent.split("\n")) {
+      if (!line.includes("[UFW BLOCK]")) continue;
+
+      // Extract DPT (destination port)
+      const dptMatch = line.match(/DPT=(\d+)/);
+      if (!dptMatch || !mcPorts.has(dptMatch[1])) continue;
+
+      // Parse timestamp - UFW log format: "Apr  4 12:34:56"
+      const tsMatch = line.match(/^(\w{3}\s+\d+\s+\d{2}:\d{2}:\d{2})/);
+      if (tsMatch) {
+        const logDate = new Date(`${tsMatch[1]} ${new Date().getFullYear()}`);
+        if (logDate.getTime() < fiveMinAgo) continue;
+      }
+
+      // Extract source IP
+      const srcMatch = line.match(/SRC=([\d.]+)/);
+      if (!srcMatch) continue;
+      const ip = srcMatch[1];
+      if (!isValidPublicIPv4(ip)) continue;
+
+      if (!ipCounts[ip]) ipCounts[ip] = { count: 0, ports: new Set() };
+      ipCounts[ip].count++;
+      ipCounts[ip].ports.add(dptMatch[1]);
+    }
+
+    // Look up country for each IP via ip-api.com (free, no key)
+    const attempts = [];
+    const ips = Object.keys(ipCounts);
+
+    if (ips.length > 0 && ips.length <= 100) {
+      // Batch lookup via ip-api.com (max 100 per batch, free tier)
+      try {
+        const batchRes = await fetch("http://ip-api.com/batch", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(ips.map((ip) => ({ query: ip, fields: "query,country,countryCode" }))),
+          signal: AbortSignal.timeout(5000),
+        });
+        const geoData = await batchRes.json();
+        const geoMap = {};
+        for (const g of geoData) {
+          if (g.query) geoMap[g.query] = { country: g.country || "Unknown", code: g.countryCode || "" };
+        }
+        for (const ip of ips) {
+          const geo = geoMap[ip] || { country: "Unknown", code: "" };
+          attempts.push({
+            ip,
+            count: ipCounts[ip].count,
+            ports: [...ipCounts[ip].ports],
+            country: geo.country,
+            countryCode: geo.code,
+          });
+        }
+      } catch {
+        // Fallback: no geo data
+        for (const ip of ips) {
+          attempts.push({
+            ip,
+            count: ipCounts[ip].count,
+            ports: [...ipCounts[ip].ports],
+            country: "Unknown",
+            countryCode: "",
+          });
+        }
+      }
+    }
+
+    // Sort by count descending
+    attempts.sort((a, b) => b.count - a.count);
+    res.json({ success: true, attempts });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 // ============================================================
 app.listen(API_PORT, () => {
   console.log(`MC API running on port ${API_PORT}`);
