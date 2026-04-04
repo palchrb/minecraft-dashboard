@@ -749,16 +749,20 @@ app.get("/api/firewall/attempts", async (req, res) => {
     const ipCounts = {};
 
     for (const line of logContent.split("\n")) {
-      if (!line.includes("[UFW BLOCK]")) continue;
+      if (!line.includes("UFW") || !line.includes("BLOCK")) continue;
 
       // Extract DPT (destination port)
       const dptMatch = line.match(/DPT=(\d+)/);
       if (!dptMatch || !mcPorts.has(dptMatch[1])) continue;
 
-      // Parse timestamp - UFW log format: "Apr  4 12:34:56" (may appear after hostname in syslog)
-      const tsMatch = line.match(/(\w{3}\s+\d+\s+\d{2}:\d{2}:\d{2})/);
-      if (tsMatch) {
-        const logDate = new Date(`${tsMatch[1]} ${new Date().getFullYear()}`);
+      // Parse timestamp - try ISO 8601 first, then syslog format
+      const isoMatch = line.match(/(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})/);
+      const syslogMatch = !isoMatch && line.match(/(\w{3}\s+\d+\s+\d{2}:\d{2}:\d{2})/);
+      if (isoMatch) {
+        const logDate = new Date(isoMatch[1]);
+        if (logDate.getTime() < fiveMinAgo) continue;
+      } else if (syslogMatch) {
+        const logDate = new Date(`${syslogMatch[1]} ${new Date().getFullYear()}`);
         if (logDate.getTime() < fiveMinAgo) continue;
       }
 
