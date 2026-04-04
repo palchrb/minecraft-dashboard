@@ -62,6 +62,7 @@ function poll() {
     loadWorlds();
     listBackups();
     loadFirewallRules();
+    loadAttempts();
   }
 }
 
@@ -78,6 +79,7 @@ document.addEventListener("visibilitychange", () => {
     loadWorlds();
     listBackups();
     loadFirewallRules();
+    loadAttempts();
     pollTimer = setInterval(poll, 10000);
     pollCount = 0;
   }
@@ -270,16 +272,18 @@ function escapeHtml(str) {
 
 async function detectPublicIp() {
   const services = [
-    { url: "https://api.ipify.org?format=json", parse: (d) => d.ip },
-    { url: "https://api64.ipify.org?format=json", parse: (d) => d.ip },
-    { url: "https://jsonip.com", parse: (d) => d.ip },
+    "https://api.ipify.org?format=json",
+    "https://api64.ipify.org?format=json",
+    "https://jsonip.com",
   ];
-  for (const svc of services) {
+  for (const url of services) {
     try {
-      const res = await fetch(svc.url, { signal: AbortSignal.timeout(5000) });
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 5000);
+      const res = await fetch(url, { signal: controller.signal });
+      clearTimeout(timer);
       const data = await res.json();
-      const ip = svc.parse(data);
-      if (ip) return ip;
+      if (data.ip) return data.ip;
     } catch { /* try next */ }
   }
   return null;
@@ -334,6 +338,45 @@ async function removeFirewallIp(ip) {
 }
 
 loadFirewallRules();
+
+// --- Connection Attempts ---
+async function loadAttempts() {
+  const data = await api("/api/firewall/attempts");
+  const list = document.getElementById("attempts-list");
+  if (data && data.attempts) {
+    list.innerHTML = data.attempts.length
+      ? data.attempts
+          .map(
+            (a) =>
+              `<li class="firewall-item">
+                <span>
+                  <span class="firewall-ip">${escapeHtml(a.ip)}</span>
+                  <span class="firewall-meta">${escapeHtml(a.country)}${a.countryCode ? ` (${escapeHtml(a.countryCode)})` : ""} &middot; ${a.count} attempt${a.count !== 1 ? "s" : ""} &middot; ports ${a.ports.join(", ")}</span>
+                </span>
+                <button onclick="allowAttemptIp('${escapeHtml(a.ip)}')" class="btn btn-sm btn-green">Allow</button>
+              </li>`
+          )
+          .join("")
+      : "<li>No blocked attempts in the last 5 minutes</li>";
+  }
+}
+
+async function allowAttemptIp(ip) {
+  const label = prompt(`Label for ${ip} (optional):`, "");
+  if (label === null) return; // cancelled
+  const data = await api("/api/firewall/add", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ip, label }),
+  });
+  if (data) {
+    toast(data.message || data.error || "OK", data.success ? "success" : "error");
+    loadFirewallRules();
+    loadAttempts();
+  }
+}
+
+loadAttempts();
 
 // --- Logs ---
 async function loadLogs() {

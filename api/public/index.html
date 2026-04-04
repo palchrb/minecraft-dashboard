@@ -104,6 +104,11 @@
         <button onclick="addFirewallIp()" class="btn btn-green">Add</button>
       </div>
       <ul id="firewall-list" class="firewall-list"></ul>
+
+      <h3>Recent Connection Attempts</h3>
+      <p class="card-desc">IPs blocked by UFW on MC ports in the last 5 minutes.</p>
+      <button onclick="loadAttempts()" class="btn btn-sm" style="margin-bottom:8px">Refresh</button>
+      <ul id="attempts-list" class="firewall-list"></ul>
     </section>
 
     <!-- World Management -->
