@@ -51,6 +51,25 @@ const KNOCK_PORT = parseInt(process.env.KNOCK_PORT) || 8100;
 const PENDING_KNOCKS_FILE = "/mcdata/pending-knocks.json";
 const KNOCK_EXPIRY_MS = 60 * 60 * 1000; // 1 hour
 
+// CIDR ranges to silently ignore for knocks (comma-separated, e.g. "100.64.0.0/10,10.0.0.0/8")
+const KNOCK_IGNORE_RANGES = (process.env.KNOCK_IGNORE_RANGES || "")
+  .split(",")
+  .map((s) => s.trim())
+  .filter(Boolean)
+  .map((cidr) => {
+    const [net, bits] = cidr.split("/");
+    const parts = net.split(".").map(Number);
+    const ip32 = ((parts[0] << 24) | (parts[1] << 16) | (parts[2] << 8) | parts[3]) >>> 0;
+    const mask = bits ? (~0 << (32 - parseInt(bits))) >>> 0 : 0xffffffff;
+    return { ip32, mask };
+  });
+
+function isIgnoredRange(ip) {
+  const parts = ip.split(".").map(Number);
+  const ip32 = ((parts[0] << 24) | (parts[1] << 16) | (parts[2] << 8) | parts[3]) >>> 0;
+  return KNOCK_IGNORE_RANGES.some((r) => (ip32 & r.mask) === (r.ip32 & r.mask));
+}
+
 fs.ensureDirSync(BACKUPS_DIR);
 fs.ensureDirSync(WORLDS_DIR);
 fs.ensureDirSync(UPLOADS_DIR);
@@ -862,6 +881,7 @@ function cleanExpiredKnocks(data) {
 /** Register a knock (deduplicated). Runs async, does not throw. */
 async function registerKnock(ip) {
   if (!isValidPublicIPv4(ip)) return;
+  if (isIgnoredRange(ip)) return;
 
   // Skip if already approved in firewall rules
   const fwData = loadFirewallRules();
