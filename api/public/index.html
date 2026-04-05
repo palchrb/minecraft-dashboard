@@ -105,6 +105,11 @@
       </div>
       <ul id="firewall-list" class="firewall-list"></ul>
 
+      <h3>Pending Knocks</h3>
+      <p class="card-desc">Nye IPer som har besøkt kartet. Godkjenn for tilgang.</p>
+      <button onclick="loadKnocks()" class="btn btn-sm" style="margin-bottom:8px">Refresh</button>
+      <ul id="knocks-list" class="firewall-list"></ul>
+
       <h3>Recent Connection Attempts</h3>
       <p class="card-desc">IPs blocked by UFW on MC ports in the last 5 minutes.</p>
       <button onclick="loadAttempts()" class="btn btn-sm" style="margin-bottom:8px">Refresh</button>
