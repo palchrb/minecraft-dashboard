@@ -46,8 +46,7 @@ const UFW_PORTS = [
 ];
 
 // --- Knock (BlueMap proxy) konfig ---
-const KNOCK_SECRET = process.env.KNOCK_SECRET || "";
-const BLUEMAP_HOST = process.env.BLUEMAP_HOST || "mc:8100";
+const BLUEMAP_HOST = process.env.BLUEMAP_HOST || "";
 const KNOCK_PORT = parseInt(process.env.KNOCK_PORT) || 8100;
 const PENDING_KNOCKS_FILE = "/mcdata/pending-knocks.json";
 const KNOCK_EXPIRY_MS = 60 * 60 * 1000; // 1 hour
@@ -957,7 +956,7 @@ app.post("/api/firewall/knocks/dismiss", (req, res) => {
 });
 
 // --- BlueMap knock-proxy on dedicated port ---
-if (KNOCK_SECRET) {
+if (BLUEMAP_HOST) {
   const knockApp = express();
 
   // Middleware: register visitor IP as knock (async, non-blocking)
@@ -984,7 +983,7 @@ if (KNOCK_SECRET) {
     console.log(`BlueMap knock-proxy on port ${KNOCK_PORT} → ${BLUEMAP_HOST}`);
   });
 } else {
-  console.log("KNOCK_SECRET not set - BlueMap knock-proxy disabled");
+  console.log("BLUEMAP_HOST not set - BlueMap knock-proxy disabled");
 }
 
 // ============================================================
