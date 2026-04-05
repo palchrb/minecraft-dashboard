@@ -608,7 +608,6 @@ function isValidPublicIPv4(ip) {
   if (a === 10) return false; // 10.0.0.0/8
   if (a === 127) return false; // loopback
   if (a === 169 && b === 254) return false; // link-local
-  if (a === 100 && b >= 64 && b <= 127) return false; // CGNAT / Tailscale
   if (a === 172 && b >= 16 && b <= 31) return false; // 172.16.0.0/12
   if (a === 192 && b === 168) return false; // 192.168.0.0/16
   if (a >= 224) return false; // multicast + reserved
