@@ -12,6 +12,7 @@ const cors = require("cors");
 const multer = require("multer");
 const rateLimit = require("express-rate-limit");
 const path = require("path");
+const { createProxyMiddleware } = require("http-proxy-middleware");
 
 const app = express();
 app.use(cors());
@@ -43,6 +44,12 @@ const UFW_PORTS = [
   { port: "19132", proto: "udp" }, // Bedrock Edition
   { port: "24454", proto: "udp" }, // Simple Voice Chat
 ];
+
+// --- Knock (BlueMap proxy) konfig ---
+const BLUEMAP_HOST = process.env.BLUEMAP_HOST || "";
+const KNOCK_PORT = parseInt(process.env.KNOCK_PORT) || 8100;
+const PENDING_KNOCKS_FILE = "/mcdata/pending-knocks.json";
+const KNOCK_EXPIRY_MS = 60 * 60 * 1000; // 1 hour
 
 fs.ensureDirSync(BACKUPS_DIR);
 fs.ensureDirSync(WORLDS_DIR);
@@ -826,6 +833,158 @@ app.get("/api/firewall/attempts", async (req, res) => {
     res.status(500).json({ success: false, error: err.message });
   }
 });
+
+// ============================================================
+// KNOCK (BlueMap Proxy) SYSTEM
+// ============================================================
+
+function loadPendingKnocks() {
+  try {
+    if (fs.existsSync(PENDING_KNOCKS_FILE)) {
+      return JSON.parse(fs.readFileSync(PENDING_KNOCKS_FILE, "utf8"));
+    }
+  } catch (e) {
+    console.error("Failed to load pending knocks:", e.message);
+  }
+  return { knocks: [] };
+}
+
+function savePendingKnocks(data) {
+  fs.writeFileSync(PENDING_KNOCKS_FILE, JSON.stringify(data, null, 2));
+}
+
+function cleanExpiredKnocks(data) {
+  const cutoff = Date.now() - KNOCK_EXPIRY_MS;
+  data.knocks = data.knocks.filter((k) => new Date(k.timestamp).getTime() > cutoff);
+  return data;
+}
+
+/** Register a knock (deduplicated). Runs async, does not throw. */
+async function registerKnock(ip) {
+  if (!isValidPublicIPv4(ip)) return;
+
+  // Skip if already approved in firewall rules
+  const fwData = loadFirewallRules();
+  if (fwData.rules.some((r) => r.ip === ip)) return;
+
+  const data = cleanExpiredKnocks(loadPendingKnocks());
+
+  // Deduplicate: update timestamp if already pending
+  const existing = data.knocks.find((k) => k.ip === ip);
+  if (existing) {
+    existing.timestamp = new Date().toISOString();
+    savePendingKnocks(data);
+    return;
+  }
+
+  // GeoIP lookup for new IP
+  let country = "Unknown";
+  let countryCode = "";
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 3000);
+    const geoRes = await fetch(`http://ip-api.com/json/${ip}?fields=country,countryCode`, {
+      signal: controller.signal,
+    });
+    clearTimeout(timer);
+    const geo = await geoRes.json();
+    if (geo.country) country = geo.country;
+    if (geo.countryCode) countryCode = geo.countryCode;
+  } catch { /* ignore geo failures */ }
+
+  data.knocks.push({ ip, timestamp: new Date().toISOString(), country, countryCode });
+  savePendingKnocks(data);
+  console.log(`Knock registered: ${ip} (${country})`);
+}
+
+/** GET /api/firewall/knocks - list pending knocks */
+app.get("/api/firewall/knocks", (req, res) => {
+  const data = cleanExpiredKnocks(loadPendingKnocks());
+  savePendingKnocks(data);
+  res.json({ success: true, knocks: data.knocks });
+});
+
+/** POST /api/firewall/knocks/approve  body: { ip, label? } */
+app.post("/api/firewall/knocks/approve", firewallLimiter, async (req, res) => {
+  const { ip, label } = req.body;
+  if (!ip || !isValidPublicIPv4(ip)) {
+    return res.status(400).json({ success: false, error: "Invalid IPv4 address" });
+  }
+
+  // Check not already in firewall
+  const fwData = loadFirewallRules();
+  if (fwData.rules.some((r) => r.ip === ip)) {
+    // Remove from pending anyway
+    const knockData = loadPendingKnocks();
+    knockData.knocks = knockData.knocks.filter((k) => k.ip !== ip);
+    savePendingKnocks(knockData);
+    return res.status(409).json({ success: false, error: "IP already in allowlist" });
+  }
+
+  try {
+    for (const { port, proto } of UFW_PORTS) {
+      await ufwExec("allow", ip, port, proto);
+    }
+    fwData.rules.push({ ip, addedAt: new Date().toISOString(), label: label || "" });
+    saveFirewallRules(fwData);
+
+    // Remove from pending
+    const knockData = loadPendingKnocks();
+    knockData.knocks = knockData.knocks.filter((k) => k.ip !== ip);
+    savePendingKnocks(knockData);
+
+    res.json({ success: true, message: `Approved ${ip} on all Minecraft ports` });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/** POST /api/firewall/knocks/dismiss  body: { ip } */
+app.post("/api/firewall/knocks/dismiss", (req, res) => {
+  const { ip } = req.body;
+  if (!ip) return res.status(400).json({ success: false, error: "Missing IP" });
+
+  const data = loadPendingKnocks();
+  const before = data.knocks.length;
+  data.knocks = data.knocks.filter((k) => k.ip !== ip);
+  savePendingKnocks(data);
+
+  if (data.knocks.length === before) {
+    return res.status(404).json({ success: false, error: "IP not in pending knocks" });
+  }
+  res.json({ success: true, message: `Dismissed ${ip}` });
+});
+
+// --- BlueMap knock-proxy on dedicated port ---
+if (BLUEMAP_HOST) {
+  const knockApp = express();
+
+  // Middleware: register visitor IP as knock (async, non-blocking)
+  knockApp.use((req, res, next) => {
+    const raw = (req.headers["x-forwarded-for"] || req.headers["x-real-ip"] || req.socket.remoteAddress || "")
+      .split(",")[0]
+      .trim()
+      .replace(/^::ffff:/, "");
+    // Fire and forget - don't delay the proxy response
+    registerKnock(raw).catch((err) => console.error("Knock registration error:", err.message));
+    next();
+  });
+
+  // Proxy to BlueMap
+  knockApp.use(
+    createProxyMiddleware({
+      target: `http://${BLUEMAP_HOST}`,
+      changeOrigin: true,
+      ws: true,
+    })
+  );
+
+  knockApp.listen(KNOCK_PORT, () => {
+    console.log(`BlueMap knock-proxy on port ${KNOCK_PORT} → ${BLUEMAP_HOST}`);
+  });
+} else {
+  console.log("BLUEMAP_HOST not set - BlueMap knock-proxy disabled");
+}
 
 // ============================================================
 app.listen(API_PORT, () => {

@@ -45,12 +45,15 @@ services:
     restart: unless-stopped
     ports:
       - "3000:3000"
+      - "${KNOCK_PORT:-8100}:${KNOCK_PORT:-8100}"
     environment:
       RCON_HOST: mc
       RCON_PORT: "25575"
       RCON_PASSWORD: "${RCON_PASSWORD:-changeme}"
       MC_LOG_FILE: /mcdata/logs/latest.log
       TZ: "Europe/Oslo"
+      BLUEMAP_HOST: "${BLUEMAP_HOST:-mc:8100}"
+      KNOCK_PORT: "${KNOCK_PORT:-8100}"
     volumes:
       - ./data:/mcdata
       - /var/run/docker.sock:/var/run/docker.sock

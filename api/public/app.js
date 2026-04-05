@@ -62,6 +62,7 @@ function poll() {
     loadWorlds();
     listBackups();
     loadFirewallRules();
+    loadKnocks();
     loadAttempts();
   }
 }
@@ -79,6 +80,7 @@ document.addEventListener("visibilitychange", () => {
     loadWorlds();
     listBackups();
     loadFirewallRules();
+    loadKnocks();
     loadAttempts();
     pollTimer = setInterval(poll, 10000);
     pollCount = 0;
@@ -338,6 +340,72 @@ async function removeFirewallIp(ip) {
 }
 
 loadFirewallRules();
+
+// --- Pending Knocks ---
+function timeAgo(isoString) {
+  const diff = Date.now() - new Date(isoString).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins} min ago`;
+  const hrs = Math.floor(mins / 60);
+  return `${hrs}h ${mins % 60}m ago`;
+}
+
+async function loadKnocks() {
+  const data = await api("/api/firewall/knocks");
+  const list = document.getElementById("knocks-list");
+  if (!data) {
+    list.innerHTML = "<li>Failed to load knocks</li>";
+  } else if (data.knocks && data.knocks.length) {
+    list.innerHTML = data.knocks
+      .map(
+        (k) =>
+          `<li class="firewall-item">
+            <span>
+              <span class="firewall-ip">${escapeHtml(k.ip)}</span>
+              <span class="firewall-meta">${escapeHtml(k.country)}${k.countryCode ? ` (${escapeHtml(k.countryCode)})` : ""} &middot; ${timeAgo(k.timestamp)}</span>
+            </span>
+            <span>
+              <button onclick="approveKnock('${escapeHtml(k.ip)}')" class="btn btn-sm btn-green">Approve</button>
+              <button onclick="dismissKnock('${escapeHtml(k.ip)}')" class="btn btn-sm btn-red">Dismiss</button>
+            </span>
+          </li>`
+      )
+      .join("");
+  } else {
+    list.innerHTML = "<li>No pending knocks</li>";
+  }
+}
+
+async function approveKnock(ip) {
+  const label = prompt(`Label for ${ip} (optional):`, "");
+  if (label === null) return;
+  const data = await api("/api/firewall/knocks/approve", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ip, label }),
+  });
+  if (data) {
+    toast(data.message || data.error || "OK", data.success ? "success" : "error");
+    loadKnocks();
+    loadFirewallRules();
+  }
+}
+
+async function dismissKnock(ip) {
+  if (!confirm(`Dismiss knock from ${ip}?`)) return;
+  const data = await api("/api/firewall/knocks/dismiss", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ip }),
+  });
+  if (data) {
+    toast(data.message || data.error || "OK", data.success ? "success" : "error");
+    loadKnocks();
+  }
+}
+
+loadKnocks();
 
 // --- Connection Attempts ---
 async function loadAttempts() {
