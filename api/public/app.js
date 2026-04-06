@@ -254,14 +254,22 @@ async function loadFirewallRules() {
     list.innerHTML = data.rules.length
       ? data.rules
           .map(
-            (r) =>
-              `<li class="firewall-item">
+            (r) => {
+              let meta = escapeHtml(r.label || "");
+              if (r.expiresAt) {
+                const remaining = new Date(r.expiresAt).getTime() - Date.now();
+                const hrs = Math.floor(remaining / 3600000);
+                const mins = Math.floor((remaining % 3600000) / 60000);
+                meta += ` · expires in ${hrs}h ${mins}m`;
+              }
+              return `<li class="firewall-item">
                 <span>
                   <span class="firewall-ip">${escapeHtml(r.ip)}</span>
-                  <span class="firewall-meta">${escapeHtml(r.label || "")}</span>
+                  <span class="firewall-meta">${meta}</span>
                 </span>
                 <button onclick="removeFirewallIp('${escapeHtml(r.ip)}')" class="btn btn-sm btn-red">Remove</button>
-              </li>`
+              </li>`;
+            }
           )
           .join("")
       : "<li>No IPs allowed</li>";

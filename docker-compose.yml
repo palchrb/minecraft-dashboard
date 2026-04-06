@@ -55,6 +55,8 @@ services:
       BLUEMAP_HOST: "${BLUEMAP_HOST:-mc:8100}"
       KNOCK_PORT: "${KNOCK_PORT:-8100}"
       KNOCK_IGNORE_RANGES: "${KNOCK_IGNORE_RANGES:-100.64.0.0/10}"
+      KNOCK_AUTO_APPROVE: "${KNOCK_AUTO_APPROVE:-false}"
+      KNOCK_AUTO_EXPIRE: "${KNOCK_AUTO_EXPIRE:-}"
     volumes:
       - ./data:/mcdata
       - /var/run/docker.sock:/var/run/docker.sock

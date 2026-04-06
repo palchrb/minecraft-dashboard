@@ -49,7 +49,11 @@ const UFW_PORTS = [
 const BLUEMAP_HOST = process.env.BLUEMAP_HOST || "";
 const KNOCK_PORT = parseInt(process.env.KNOCK_PORT) || 8100;
 const PENDING_KNOCKS_FILE = "/mcdata/pending-knocks.json";
-const KNOCK_EXPIRY_MS = 60 * 60 * 1000; // 1 hour
+const KNOCK_EXPIRY_MS = 60 * 60 * 1000; // 1 hour (for pending knocks)
+const KNOCK_AUTO_APPROVE = process.env.KNOCK_AUTO_APPROVE === "true";
+const KNOCK_AUTO_EXPIRE = process.env.KNOCK_AUTO_EXPIRE
+  ? parseInt(process.env.KNOCK_AUTO_EXPIRE) * 60 * 60 * 1000
+  : 0; // hours → ms, 0 = disabled
 
 // CIDR ranges to silently ignore for knocks (comma-separated, e.g. "100.64.0.0/10,10.0.0.0/8")
 const KNOCK_IGNORE_RANGES = (process.env.KNOCK_IGNORE_RANGES || "")
@@ -878,26 +882,24 @@ function cleanExpiredKnocks(data) {
   return data;
 }
 
-/** Register a knock (deduplicated). Runs async, does not throw. */
+/** Register a knock (deduplicated). Auto-approves if KNOCK_AUTO_APPROVE is set. */
 async function registerKnock(ip) {
   if (!isValidPublicIPv4(ip)) return;
   if (isIgnoredRange(ip)) return;
 
-  // Skip if already approved in firewall rules
   const fwData = loadFirewallRules();
-  if (fwData.rules.some((r) => r.ip === ip)) return;
+  const existingRule = fwData.rules.find((r) => r.ip === ip);
 
-  const data = cleanExpiredKnocks(loadPendingKnocks());
-
-  // Deduplicate: update timestamp if already pending
-  const existing = data.knocks.find((k) => k.ip === ip);
-  if (existing) {
-    existing.timestamp = new Date().toISOString();
-    savePendingKnocks(data);
+  // If already approved, renew expiresAt if auto-expire is active
+  if (existingRule) {
+    if (KNOCK_AUTO_EXPIRE && existingRule.expiresAt) {
+      existingRule.expiresAt = new Date(Date.now() + KNOCK_AUTO_EXPIRE).toISOString();
+      saveFirewallRules(fwData);
+    }
     return;
   }
 
-  // GeoIP lookup for new IP
+  // GeoIP lookup
   let country = "Unknown";
   let countryCode = "";
   try {
@@ -911,6 +913,35 @@ async function registerKnock(ip) {
     if (geo.country) country = geo.country;
     if (geo.countryCode) countryCode = geo.countryCode;
   } catch { /* ignore geo failures */ }
+
+  // Auto-approve: add UFW rules immediately
+  if (KNOCK_AUTO_APPROVE) {
+    try {
+      for (const { port, proto } of UFW_PORTS) {
+        await ufwExec("allow", ip, port, proto);
+      }
+      const rule = { ip, addedAt: new Date().toISOString(), label: `Auto-approved (${country})` };
+      if (KNOCK_AUTO_EXPIRE) {
+        rule.expiresAt = new Date(Date.now() + KNOCK_AUTO_EXPIRE).toISOString();
+      }
+      fwData.rules.push(rule);
+      saveFirewallRules(fwData);
+      console.log(`Knock auto-approved: ${ip} (${country})`);
+    } catch (err) {
+      console.error(`Knock auto-approve failed for ${ip}:`, err.message);
+    }
+    return;
+  }
+
+  // Manual mode: add to pending knocks
+  const data = cleanExpiredKnocks(loadPendingKnocks());
+
+  const existing = data.knocks.find((k) => k.ip === ip);
+  if (existing) {
+    existing.timestamp = new Date().toISOString();
+    savePendingKnocks(data);
+    return;
+  }
 
   data.knocks.push({ ip, timestamp: new Date().toISOString(), country, countryCode });
   savePendingKnocks(data);
@@ -1004,6 +1035,35 @@ if (BLUEMAP_HOST) {
   });
 } else {
   console.log("BLUEMAP_HOST not set - BlueMap knock-proxy disabled");
+}
+
+// --- Auto-expire: remove UFW rules for expired IPs ---
+if (KNOCK_AUTO_EXPIRE) {
+  async function cleanExpiredFirewallRules() {
+    const data = loadFirewallRules();
+    const now = Date.now();
+    const expired = data.rules.filter((r) => r.expiresAt && new Date(r.expiresAt).getTime() < now);
+
+    for (const rule of expired) {
+      try {
+        for (const { port, proto } of UFW_PORTS) {
+          await ufwExec("delete", rule.ip, port, proto);
+        }
+        console.log(`Auto-expired: ${rule.ip}`);
+      } catch (err) {
+        console.error(`Failed to expire ${rule.ip}:`, err.message);
+      }
+    }
+
+    if (expired.length) {
+      data.rules = data.rules.filter((r) => !r.expiresAt || new Date(r.expiresAt).getTime() >= now);
+      saveFirewallRules(data);
+    }
+  }
+
+  // Run every 10 minutes
+  setInterval(cleanExpiredFirewallRules, 10 * 60 * 1000);
+  console.log(`Auto-expire enabled: ${KNOCK_AUTO_EXPIRE / (60 * 60 * 1000)}h TTL, checking every 10m`);
 }
 
 // ============================================================
