@@ -1,7 +1,7 @@
 {
   "name": "mc-dashboard-api",
-  "version": "2.0.0",
-  "description": "Minecraft server management API and dashboard",
+  "version": "3.0.0",
+  "description": "Multi-game server management API + per-user knock PWA",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"

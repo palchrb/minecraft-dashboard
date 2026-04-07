@@ -1,11 +1,76 @@
 const API = window.location.origin;
 
+// ---- i18n -----------------------------------------------------------------
+let I18N = {};
+let CURRENT_LANG = "en";
+
+async function loadI18n() {
+  try {
+    const res = await fetch("/api/i18n");
+    const data = await res.json();
+    I18N = data.dict || {};
+    CURRENT_LANG = data.lang || "en";
+    document.documentElement.lang = CURRENT_LANG;
+    applyI18n();
+  } catch (err) {
+    console.error("i18n load failed:", err);
+  }
+}
+
+function t(key, vars) {
+  let s = I18N[key] || key;
+  if (vars) {
+    for (const [k, v] of Object.entries(vars)) {
+      s = s.replace(new RegExp(`\\{${k}\\}`, "g"), String(v));
+    }
+  }
+  return s;
+}
+
+function applyI18n() {
+  for (const el of document.querySelectorAll("[data-i18n]")) {
+    el.textContent = t(el.dataset.i18n);
+  }
+  for (const el of document.querySelectorAll("[data-i18n-placeholder]")) {
+    el.placeholder = t(el.dataset.i18nPlaceholder);
+  }
+}
+
+// ---- Services registry + selector ----------------------------------------
+let SERVICES = [];
+let CURRENT_SERVICE = null;
+
+async function loadServices() {
+  try {
+    const res = await fetch("/api/services");
+    const data = await res.json();
+    SERVICES = data.services || [];
+    CURRENT_SERVICE = data.defaultId || (SERVICES[0] && SERVICES[0].id);
+    const sel = document.getElementById("service-select");
+    if (sel) {
+      sel.innerHTML = SERVICES.map(
+        (s) => `<option value="${s.id}">${escapeHtml(s.name)}</option>`,
+      ).join("");
+      sel.value = CURRENT_SERVICE;
+      sel.onchange = () => {
+        CURRENT_SERVICE = sel.value;
+        refreshStatus();
+      };
+    }
+  } catch (err) {
+    console.error("services load failed:", err);
+  }
+}
+
 function toast(msg, type = "success") {
   const el = document.getElementById("toast");
   el.textContent = msg;
   el.className = `toast show ${type}`;
   setTimeout(() => (el.className = "toast"), 3000);
 }
+
+loadI18n();
+loadServices();
 
 async function api(path, opts) {
   try {
@@ -468,3 +533,131 @@ async function loadLogs() {
     output.scrollTop = output.scrollHeight;
   }
 }
+
+// --- Users (per-child knock links) ---------------------------------------
+async function loadUsers() {
+  const data = await api("/api/users");
+  const list = document.getElementById("user-list");
+  if (!list) return;
+  if (!data || !data.users || data.users.length === 0) {
+    list.innerHTML = `<li class="muted">${t("users.no_users")}</li>`;
+    return;
+  }
+  const origin = window.location.origin;
+  list.innerHTML = data.users
+    .map((u) => {
+      const url = `${origin}/u/${u.token}`;
+      const services = (u.allowedServices || []).join(", ") || "—";
+      return `<li class="user-item">
+        <div>
+          <strong>${escapeHtml(u.name)}</strong>
+          <div class="muted">${escapeHtml(services)}</div>
+        </div>
+        <div class="user-actions">
+          <button class="btn btn-sm" onclick="copyKnockLink('${escapeAttr(url)}')">${t("btn.copy_link")}</button>
+          <button class="btn btn-sm btn-red" onclick="deleteUser('${escapeAttr(u.id)}','${escapeAttr(u.name)}')">${t("common.delete")}</button>
+        </div>
+      </li>`;
+    })
+    .join("");
+}
+
+async function addUser() {
+  const input = document.getElementById("user-name");
+  const name = input.value.trim();
+  if (!name) return toast(t("users.placeholder_name"), "error");
+  // Default to all services so admin doesn't need a multi-select on first creation
+  const allowedServices = SERVICES.map((s) => s.id);
+  const data = await api("/api/users", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name, allowedServices }),
+  });
+  if (data && data.success) {
+    input.value = "";
+    toast(t("users.created", { name }), "success");
+    loadUsers();
+  } else if (data) {
+    toast(data.error || "Failed", "error");
+  }
+}
+
+async function deleteUser(id, name) {
+  if (!confirm(`${t("common.delete")} ${name}?`)) return;
+  const data = await api(`/api/users/${id}`, { method: "DELETE" });
+  if (data && data.success) {
+    toast(t("users.deleted", { name }), "success");
+    loadUsers();
+  }
+}
+
+async function copyKnockLink(url) {
+  try {
+    await navigator.clipboard.writeText(url);
+    toast(t("users.copy_link_done"), "success");
+  } catch {
+    prompt("Copy this link:", url);
+  }
+}
+
+function escapeAttr(s) { return escapeHtml(s); }
+
+// --- Active sessions ------------------------------------------------------
+async function loadActiveSessions() {
+  const data = await api("/api/active-sessions");
+  const list = document.getElementById("active-sessions-list");
+  if (!list || !data || !data.sessions) return;
+  if (data.sessions.length === 0) {
+    list.innerHTML = `<li class="muted">${t("users.no_users")}</li>`;
+    return;
+  }
+  list.innerHTML = data.sessions
+    .map((s) => {
+      const playing = s.services.find((sv) => sv.connected);
+      let label;
+      if (playing) {
+        label = t("active.connected", { service: playing.name });
+      } else if (s.ip) {
+        label = t("active.idle_allowed");
+      } else {
+        label = t("active.idle_unallowed");
+      }
+      return `<li class="firewall-item">
+        <span><strong>${escapeHtml(s.name)}</strong>
+          <span class="firewall-meta">${escapeHtml(label)}${s.ip ? ` · ${escapeHtml(s.ip)}` : ""}</span>
+        </span>
+      </li>`;
+    })
+    .join("");
+}
+
+// --- Stats leaderboard ----------------------------------------------------
+async function loadStatsLeaderboard() {
+  const data = await api("/api/stats");
+  const list = document.getElementById("stats-leaderboard");
+  if (!list || !data || !data.leaderboard) return;
+  if (data.leaderboard.length === 0) {
+    list.innerHTML = `<li class="muted">${t("stats.no_data")}</li>`;
+    return;
+  }
+  // Map userId → name via /api/users
+  const usersData = await api("/api/users");
+  const nameById = {};
+  if (usersData && usersData.users) {
+    for (const u of usersData.users) nameById[u.id] = u.name;
+  }
+  list.innerHTML = data.leaderboard
+    .map((row) => {
+      const h = Math.floor(row.totalSeconds / 3600);
+      const m = Math.floor((row.totalSeconds % 3600) / 60);
+      return `<li class="firewall-item">
+        <span><strong>${escapeHtml(nameById[row.userId] || row.userId)}</strong></span>
+        <span class="firewall-meta">${h}h ${m}m</span>
+      </li>`;
+    })
+    .join("");
+}
+
+loadUsers();
+loadActiveSessions();
+loadStatsLeaderboard();

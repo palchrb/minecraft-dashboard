@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="no">
+<html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -7,14 +7,17 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="theme-color" content="#1a1a2e">
   <link rel="manifest" href="manifest.json">
-  <title>Minecraft Dashboard</title>
+  <title data-i18n="header.title">Game Dashboard</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <div class="container">
     <header>
-      <h1>Minecraft Dashboard</h1>
-      <div id="status-badge" class="badge badge-offline">Offline</div>
+      <h1 data-i18n="header.title">Game Dashboard</h1>
+      <div class="header-right">
+        <select id="service-select" class="service-select" title="Service"></select>
+        <div id="status-badge" class="badge badge-offline" data-i18n="header.offline">Offline</div>
+      </div>
     </header>
 
     <!-- Server Status -->
@@ -150,9 +153,34 @@
 
     <!-- Server Log -->
     <section class="card">
-      <h2>Server Log</h2>
-      <button onclick="loadLogs()" class="btn btn-sm">Refresh</button>
+      <h2 data-i18n="card.log">Server Log</h2>
+      <button onclick="loadLogs()" class="btn btn-sm" data-i18n="common.refresh">Refresh</button>
       <pre id="log-output" class="output log-output"></pre>
+    </section>
+
+    <!-- Users (per-child knock links) -->
+    <section class="card">
+      <h2 data-i18n="card.users">Users</h2>
+      <p class="card-desc" data-i18n="users.no_users">Add users below to generate personal knock links.</p>
+      <div class="input-group">
+        <input type="text" id="user-name" placeholder="Child's name (e.g. Lars)">
+        <button onclick="addUser()" class="btn btn-green" data-i18n="btn.add_user">Add user</button>
+      </div>
+      <ul id="user-list" class="user-list"></ul>
+    </section>
+
+    <!-- Active sessions -->
+    <section class="card">
+      <h2 data-i18n="card.active_sessions">Who is playing now</h2>
+      <button onclick="loadActiveSessions()" class="btn btn-sm" data-i18n="common.refresh">Refresh</button>
+      <ul id="active-sessions-list" class="firewall-list"></ul>
+    </section>
+
+    <!-- Stats -->
+    <section class="card">
+      <h2 data-i18n="card.stats">Playtime statistics</h2>
+      <button onclick="loadStatsLeaderboard()" class="btn btn-sm" data-i18n="common.refresh">Refresh</button>
+      <ul id="stats-leaderboard" class="stats-list"></ul>
     </section>
 
     <!-- Notification area -->

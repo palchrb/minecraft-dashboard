@@ -305,3 +305,34 @@ h3 {
     gap: 12px;
   }
 }
+
+
+/* ---- Multi-game additions ---- */
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.service-select {
+  background: #2a2a44;
+  color: #e0e0e0;
+  border: 1px solid #3d3d5f;
+  border-radius: 8px;
+  padding: 6px 10px;
+  font-size: 14px;
+}
+
+.user-list { list-style: none; padding: 0; margin: 12px 0 0; }
+.user-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 0;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+  gap: 12px;
+}
+.user-item:last-child { border-bottom: none; }
+.user-item .muted { color: #9aa0c0; font-size: 12px; }
+.user-actions { display: flex; gap: 6px; }
+
+.stats-list { list-style: none; padding: 0; margin: 12px 0 0; }
